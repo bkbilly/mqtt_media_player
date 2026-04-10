@@ -37,9 +37,11 @@ Publish a JSON configuration message to `homeassistant/media_player/{device_id}/
   "state_duration_topic": "myplayer/duration",
   "state_position_topic": "myplayer/position",
   "state_volume_topic": "myplayer/volume",
+  "state_mute_topic": "myplayer/mute",
   "state_albumart_topic": "myplayer/albumart",
   "state_mediatype_topic": "myplayer/mediatype",
   "command_volume_topic": "myplayer/set_volume",
+  "command_mute_topic": "myplayer/set_mute",
   "command_play_topic": "myplayer/play",
   "command_play_payload": "play",
   "command_pause_topic": "myplayer/pause",
@@ -57,29 +59,31 @@ Publish a JSON configuration message to `homeassistant/media_player/{device_id}/
 
 ### Configuration Options
 
-| Variables                | Description                                              | Topic               | Payload   |
-|--------------------------|----------------------------------------------------------|---------------------|-----------|
-| availability             | Availability configuration object                        | -                   |           |
-| ↳ topic                  | Availability topic                                       | myplayer/available  |           |
-| ↳ payload_available      | Payload when device is available                         | -                   | online    |
-| ↳ payload_unavailable    | Payload when device is unavailable                       | -                   | offline   |
-| name                     | The name of the Media Player                             | -                   | MyPlayer  |
-| state_state_topic        | Media Player state topic                                 | myplayer/state      |           |
-| state_title_topic        | Track Title                                              | myplayer/title      |           |
-| state_artist_topic       | Track Artist                                             | myplayer/artist     |           |
-| state_album_topic        | Track Album                                              | myplayer/album      |           |
-| state_duration_topic     | Track Duration (int)                                     | myplayer/duration   |           |
-| state_position_topic     | Track Position (int)                                     | myplayer/position   |           |
-| state_albumart_topic     | Thumbnail (byte)                                         | myplayer/albumart   |           |
-| state_mediatype_topic    | Media Type (music, video)                                | myplayer/mediatype  |           |
-| state_volume_topic       | Current system volume                                    | myplayer/volume     |           |
-| command_volume_topic     | Set System volume                                        | myplayer/volumeset  |           |
-| command_play_topic       | Play media                                               | myplayer/play       | Play      |
-| command_pause_topic      | Pause media                                              | myplayer/pause      | Pause     |
-| command_playpause_topic  | PlayPause media                                          | myplayer/playpause  | PlayPause |
-| command_next_topic       | Go to next track                                         | myplayer/next       | Next      |
-| command_previous_topic   | Go to previous track                                     | myplayer/previous   | Previous  |
-| command_playmedia_topic  | Support TTS, playing media, etc...                       | myplayer/playmedia  |           |
+| Variables               | Description                                              | Topic              | Payload     |
+|-------------------------|----------------------------------------------------------|--------------------|-------------|
+| availability            | Availability configuration object                        | -                  |             |
+| ↳ topic                 | Availability topic                                       | myplayer/available |             |
+| ↳ payload_available     | Payload when device is available                         | -                  | online      |
+| ↳ payload_unavailable   | Payload when device is unavailable                       | -                  | offline     |
+| name                    | The name of the Media Player                             | -                  | MyPlayer    |
+| state_state_topic       | Media Player state topic                                 | myplayer/state     |             |
+| state_title_topic       | Track Title                                              | myplayer/title     |             |
+| state_artist_topic      | Track Artist                                             | myplayer/artist    |             |
+| state_album_topic       | Track Album                                              | myplayer/album     |             |
+| state_duration_topic    | Track Duration (int)                                     | myplayer/duration  |             |
+| state_position_topic    | Track Position (int)                                     | myplayer/position  |             |
+| state_albumart_topic    | Thumbnail (byte)                                         | myplayer/albumart  |             |
+| state_mediatype_topic   | Media Type (music, video)                                | myplayer/mediatype |             |
+| state_volume_topic      | Current system volume                                    | myplayer/volume    |             |
+| state_muted_topic       | Current mute state                                       | myplayer/muted     | mute/unmute |
+| command_volume_topic    | Set System volume                                        | myplayer/volumeset |             |
+| command_mute_topic      | Mute or unmute the player                                | myplayer/set_mute  | mute/unmute |
+| command_play_topic      | Play media                                               | myplayer/play      | Play        |
+| command_pause_topic     | Pause media                                              | myplayer/pause     | Pause       |
+| command_playpause_topic | PlayPause media                                          | myplayer/playpause | PlayPause   |
+| command_next_topic      | Go to next track                                         | myplayer/next      | Next        |
+| command_previous_topic  | Go to previous track                                     | myplayer/previous  | Previous    |
+| command_playmedia_topic | Support TTS, playing media, etc...                       | myplayer/playmedia |             |
 
 ### State Values
 
