@@ -26,10 +26,6 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         _LOGGER.error("MQTT integration is not available, make sure MQTT is set up correctly")
         return False
 
-    player = MQTTMediaPlayer(hass, config_entry)
-    async_add_entities([player])
-
-    # Subscribe to the config topic to get media player configuration dynamically
     # Use the discovery topic if available, otherwise construct a wildcard pattern
     if "discovery_topic" in config_entry.data:
         CONFIG_TOPIC = config_entry.data["discovery_topic"]
@@ -40,17 +36,19 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         # and homeassistant/media_player/lnxlink/my_player/config
         CONFIG_TOPIC = f"homeassistant/media_player/#"
 
-    unsubscribe_config = await async_subscribe(hass, CONFIG_TOPIC, player.handle_config)
-    player.set_config_unsubscribe(unsubscribe_config)
+    # The config topic subscription is made in async_added_to_hass
+    player = MQTTMediaPlayer(hass, config_entry, CONFIG_TOPIC)
+    async_add_entities([player])
 
 
 class MQTTMediaPlayer(MediaPlayerEntity):
     """Representation of a MQTT Media Player."""
 
-    def __init__(self, hass, config_entry):
+    def __init__(self, hass, config_entry, config_topic):
         """Initialize the MQTT Media Player."""
         self._hass = hass
         self._config_entry = config_entry
+        self._config_topic = config_topic
         self._name = None
         self._state = None
         self._volume = 0.0
@@ -76,9 +74,17 @@ class MQTTMediaPlayer(MediaPlayerEntity):
             if "name" in disc_data:
                 self._name = disc_data.get("name")
 
-    def set_config_unsubscribe(self, unsubscribe_callback):
-        """Set the unsubscribe callback for the config topic."""
-        self._config_unsubscribe = unsubscribe_callback
+    async def async_added_to_hass(self):
+        """Subscribe to the config topic to get media player configuration dynamically.
+
+        Home Assistant removes and re-adds the entity when its entity ID is changed,
+        so this must run on every add rather than once in async_setup_entry. The
+        config topic is retained, so resubscribing replays it and handle_config
+        restores the state topic subscriptions.
+        """
+        self._config_unsubscribe = await async_subscribe(
+            self._hass, self._config_topic, self.handle_config
+        )
 
     async def async_will_remove_from_hass(self):
         """Unsubscribe from MQTT topics when entity is removed."""
