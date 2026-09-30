@@ -79,7 +79,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
-    """Handle removal of the integration."""
+    """Unload a config entry."""
+    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry):
+    """Handle removal of the integration.
+
+    Clearing the retained discovery config must happen here rather than in
+    async_unload_entry, which also runs on every reload: clearing it there
+    leaves the reloaded entity with no config to resubscribe from until the
+    device republishes discovery.
+    """
     
     # Clear the MQTT config by publishing empty payload
     if "discovery_topic" in entry.data:
@@ -96,5 +106,3 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
             _LOGGER.info(f"Cleared MQTT config for {entry.title} at {config_topic}")
         except Exception as e:
             _LOGGER.error(f"Failed to clear MQTT config: {e}")
-    
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
