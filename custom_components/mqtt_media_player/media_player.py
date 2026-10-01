@@ -15,6 +15,8 @@ from homeassistant.components.mqtt import (
     async_publish,
     async_wait_for_mqtt_client,
 )
+from homeassistant.helpers import entity_registry as er
+from . import entry_device_id
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -31,10 +33,19 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         CONFIG_TOPIC = config_entry.data["discovery_topic"]
     else:
         # For manually added devices, use a wildcard to catch any path structure
-        device_id = config_entry.title
         # This will match both homeassistant/media_player/my_player/config
         # and homeassistant/media_player/lnxlink/my_player/config
         CONFIG_TOPIC = f"homeassistant/media_player/#"
+
+    # The entity's unique ID used to be the entry title, so renaming the entry in
+    # the UI created a new entity and orphaned the old one. Move an entity still
+    # keyed on the title to the device ID so it keeps its entity ID and history.
+    device_id = entry_device_id(config_entry)
+    if config_entry.title != device_id:
+        registry = er.async_get(hass)
+        old_entity_id = registry.async_get_entity_id("media_player", DOMAIN, config_entry.title)
+        if old_entity_id and not registry.async_get_entity_id("media_player", DOMAIN, device_id):
+            registry.async_update_entity(old_entity_id, new_unique_id=device_id)
 
     # The config topic subscription is made in async_added_to_hass
     player = MQTTMediaPlayer(hass, config_entry, CONFIG_TOPIC)
@@ -49,6 +60,7 @@ class MQTTMediaPlayer(MediaPlayerEntity):
         self._hass = hass
         self._config_entry = config_entry
         self._config_topic = config_topic
+        self._device_id = entry_device_id(config_entry)
         self._name = None
         self._state = None
         self._volume = 0.0
@@ -139,7 +151,7 @@ class MQTTMediaPlayer(MediaPlayerEntity):
         topic_device_id = topic_parts[-2]  # Get the part before '/config'
 
         # Only process if this message is for our device
-        if topic_device_id != self._config_entry.title:
+        if topic_device_id != self._device_id:
             _LOGGER.debug(f"Ignoring config for different device: {topic_device_id}")
             return
 
@@ -245,7 +257,7 @@ class MQTTMediaPlayer(MediaPlayerEntity):
 
     @property
     def unique_id(self):
-        return self._config_entry.title
+        return self._device_id
 
     @property
     def state(self):
