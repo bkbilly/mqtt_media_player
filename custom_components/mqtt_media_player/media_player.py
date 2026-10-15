@@ -453,7 +453,9 @@ class MQTTMediaPlayer(MediaPlayerEntity):
         """Sends media to play."""
         if topic := self._cmd_topics.get("playmedia_topic"):
             if media_source.is_media_source_id(media_id):
-                sourced_media = await media_source.async_resolve_media(self.hass, media_id)
+                sourced_media = await media_source.async_resolve_media(
+                    self.hass, media_id, self.entity_id
+                )
                 media_type = sourced_media.mime_type
                 media_id = async_process_play_media_url(self.hass, sourced_media.url)
             media = {
