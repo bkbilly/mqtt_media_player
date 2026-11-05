@@ -128,7 +128,7 @@ class MQTTMediaPlayer(MediaPlayerEntity):
         if sw_version := self._device_config.get("sw_version"):
             info["sw_version"] = sw_version
         if via_device := self._device_config.get("via_device"):
-            info["via_device"] = (DOMAIN, via_device)
+            info["via_device"] = ("mqtt", via_device)
 
         return info
 
