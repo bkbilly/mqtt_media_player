@@ -54,6 +54,25 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     async_add_entities([player])
 
 
+def _find_device(hass, registry, identifier, config_entry_id=None):
+    """Find a device by one identifier.
+
+    Newer Home Assistant versions deprecate async_get_device, because identifiers
+    are only unique within a config entry; they offer async_get_devices instead.
+    Prefer the device of the integration the identifier names (e.g. mqtt).
+    """
+    if not hasattr(registry, "async_get_devices"):
+        return registry.async_get_device(identifiers={identifier})
+
+    devices = registry.async_get_devices(identifiers={identifier}, config_entry_id=config_entry_id)
+    for device in devices:
+        entry_id = getattr(device, "config_entry_id", None)
+        entry = hass.config_entries.async_get_entry(entry_id) if entry_id else None
+        if entry is not None and entry.domain == identifier[0]:
+            return device
+    return devices[0] if devices else None
+
+
 class MQTTMediaPlayer(MediaPlayerEntity):
     """Representation of a MQTT Media Player."""
 
@@ -256,19 +275,21 @@ class MQTTMediaPlayer(MediaPlayerEntity):
             )
 
         registry = dr.async_get(self._hass)
-        device = registry.async_get_device(identifiers={(DOMAIN, self._config_entry.entry_id)})
+        device = _find_device(
+            self._hass, registry, (DOMAIN, self._config_entry.entry_id), self._config_entry.entry_id
+        )
         if device is None:
             return  # Not registered yet: device_info is used when it is.
 
         info = self.device_info
         via_device_id = None
         if via := info.get("via_device"):
-            if via_device := registry.async_get_device(identifiers={via}):
+            if via_device := _find_device(self._hass, registry, via):
                 via_device_id = via_device.id
 
         registry.async_update_device(
             device.id,
-            merge_identifiers=info["identifiers"] - device.identifiers,
+            new_identifiers=device.identifiers | info["identifiers"],
             name=info["name"],
             manufacturer=info["manufacturer"],
             model=info.get("model"),
