@@ -15,6 +15,8 @@ from homeassistant.components.mqtt import (
     async_publish,
     async_wait_for_mqtt_client,
 )
+from homeassistant.core import Event, callback
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from . import entry_device_id
 from .const import DOMAIN
@@ -50,6 +52,25 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
     # The config topic subscription is made in async_added_to_hass
     player = MQTTMediaPlayer(hass, config_entry, CONFIG_TOPIC)
     async_add_entities([player])
+
+
+def _find_device(hass, registry, identifier, config_entry_id=None):
+    """Find a device by one identifier.
+
+    Newer Home Assistant versions deprecate async_get_device, because identifiers
+    are only unique within a config entry; they offer async_get_devices instead.
+    Prefer the device of the integration the identifier names (e.g. mqtt).
+    """
+    if not hasattr(registry, "async_get_devices"):
+        return registry.async_get_device(identifiers={identifier})
+
+    devices = registry.async_get_devices(identifiers={identifier}, config_entry_id=config_entry_id)
+    for device in devices:
+        entry_id = getattr(device, "config_entry_id", None)
+        entry = hass.config_entries.async_get_entry(entry_id) if entry_id else None
+        if entry is not None and entry.domain == identifier[0]:
+            return device
+    return devices[0] if devices else None
 
 
 class MQTTMediaPlayer(MediaPlayerEntity):
@@ -97,6 +118,13 @@ class MQTTMediaPlayer(MediaPlayerEntity):
         self._config_unsubscribe = await async_subscribe(
             self._hass, self._config_topic, self.handle_config
         )
+        # The device this player is connected through may be created after the
+        # player (e.g. both are discovered at the same time). Link it when it appears.
+        self.async_on_remove(
+            self._hass.bus.async_listen(
+                dr.EVENT_DEVICE_REGISTRY_UPDATED, self._handle_device_registry_updated
+            )
+        )
 
     async def async_will_remove_from_hass(self):
         """Unsubscribe from MQTT topics when entity is removed."""
@@ -134,9 +162,24 @@ class MQTTMediaPlayer(MediaPlayerEntity):
 
     async def handle_config(self, message):
         """Handle incoming configuration from MQTT."""
-        # Handle empty payload (device removal)
+        # Extract device ID from the topic to match against our config entry
+        # Topic format: homeassistant/media_player/[optional_prefix/]device_id/config
+        topic_parts = message.topic.split('/')
+        topic_device_id = topic_parts[-2]  # Get the part before '/config'
+
+        # Only process if this message is for our device. Checked before the
+        # empty payload: a manually added player subscribes with a wildcard.
+        if topic_device_id != self._device_id:
+            _LOGGER.debug(f"Ignoring config for different device: {topic_device_id}")
+            return
+
+        # An empty config means the device was removed, as for MQTT discovery in
+        # Home Assistant itself: remove the entry, its entity and its device.
         if not message.payload or message.payload.strip() == "":
-            _LOGGER.info("Received empty config payload - device removed")
+            _LOGGER.info("Discovery config for %s was cleared; removing it", self._device_id)
+            self._hass.async_create_task(
+                self._hass.config_entries.async_remove(self._config_entry.entry_id)
+            )
             return
 
         try:
@@ -145,19 +188,10 @@ class MQTTMediaPlayer(MediaPlayerEntity):
             _LOGGER.error(f"Failed to parse config JSON: {e}")
             return
 
-        # Extract device ID from the topic to match against our config entry
-        # Topic format: homeassistant/media_player/[optional_prefix/]device_id/config
-        topic_parts = message.topic.split('/')
-        topic_device_id = topic_parts[-2]  # Get the part before '/config'
-
-        # Only process if this message is for our device
-        if topic_device_id != self._device_id:
-            _LOGGER.debug(f"Ignoring config for different device: {topic_device_id}")
-            return
-
         _LOGGER.info(f"Received configuration: {config}")
         self._name = config.get("name")
         self._device_config = config.get("device", {})
+        self._update_device(config)
 
         # Set the MQTT topics from the configuration
         self._availability_topics = {
@@ -224,6 +258,56 @@ class MQTTMediaPlayer(MediaPlayerEntity):
             self._subscribed.append(await async_subscribe(self._hass, check_topic, self.handle_availability))
 
         self.async_write_ha_state()
+
+    def _update_device(self, config=None):
+        """Bring the device record and the stored config up to date.
+
+        Home Assistant reads device_info only when the entity is added, and the
+        entry keeps the config from the first discovery. Without this, a new
+        version, name or connected-via device is never shown, and a link lost
+        when the connected-via device was deleted and re-added never comes back.
+        """
+        if config is not None and config != self._config_entry.data.get("discovery_data"):
+            # Used for device_info after a restart.
+            self._hass.config_entries.async_update_entry(
+                self._config_entry,
+                data={**self._config_entry.data, "discovery_data": config},
+            )
+
+        registry = dr.async_get(self._hass)
+        device = _find_device(
+            self._hass, registry, (DOMAIN, self._config_entry.entry_id), self._config_entry.entry_id
+        )
+        if device is None:
+            return  # Not registered yet: device_info is used when it is.
+
+        info = self.device_info
+        via_device_id = None
+        if via := info.get("via_device"):
+            if via_device := _find_device(self._hass, registry, via):
+                via_device_id = via_device.id
+
+        registry.async_update_device(
+            device.id,
+            new_identifiers=device.identifiers | info["identifiers"],
+            name=info["name"],
+            manufacturer=info["manufacturer"],
+            model=info.get("model"),
+            sw_version=info.get("sw_version"),
+            via_device_id=via_device_id,
+        )
+
+    @callback
+    def _handle_device_registry_updated(self, event: Event) -> None:
+        """Link the connected-via device when it is created after this player."""
+        if event.data.get("action") != "create":
+            return
+        via = self._device_config.get("via_device")
+        if not via:
+            return
+        device = dr.async_get(self._hass).async_get(event.data["device_id"])
+        if device is not None and ("mqtt", via) in device.identifiers:
+            self._update_device()
 
     @property
     def supported_features(self):
