@@ -10,22 +10,21 @@ from homeassistant.components.mqtt import (
 )
 
 from .const import DOMAIN
+from .helpers import entry_device_id, topic_device_id
+from .migration import migrate_to_1_2
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [Platform.MEDIA_PLAYER]
 
-def entry_device_id(entry: ConfigEntry) -> str:
-    """Return the device ID (the discovery topic segment before /config) for an entry.
-
-    The entry title starts out as the device ID but can be renamed in the UI, so it
-    must not be used to identify the device. The unique ID and data["name"] are set
-    to the device ID when the entry is created and never change.
-    """
-    return entry.unique_id or entry.data.get("name") or entry.title
-
 async def async_setup(hass: HomeAssistant, config: dict):
     """Set up the integration using YAML (if needed)."""
+    # Migrate before subscribing: the retained discovery configs that arrive
+    # next must find the entries under their current device ID. Home Assistant
+    # itself calls async_migrate_entry only when an entry is set up, after this.
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        await async_migrate_entry(hass, entry)
+
     if not await async_wait_for_mqtt_client(hass):
         _LOGGER.error("MQTT integration is not available, make sure MQTT is set up correctly")
         return False
@@ -49,9 +48,7 @@ async def async_setup(hass: HomeAssistant, config: dict):
         try:
             config_data = json.loads(message.payload)
             
-            # Extract device_id from topic (the part before /config)
-            topic_parts = message.topic.split("/")
-            device_id = topic_parts[-2]  # Get the part right before '/config'
+            device_id = topic_device_id(message.topic)
             
             _LOGGER.info(f"Discovered MQTT media player: {device_id} from topic {message.topic}")
             
@@ -82,6 +79,15 @@ async def async_setup(hass: HomeAssistant, config: dict):
     await async_subscribe(hass, discovery_topic, mqtt_discovery_callback)
     return True
 
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate an entry to the current config entry version (steps in migration.py)."""
+    if entry.version > 1:
+        return False  # Downgraded from a future version
+
+    if entry.minor_version < 2:
+        migrate_to_1_2(hass, entry)
+    return True
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Set up the integration from the UI."""
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -101,13 +107,7 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry):
     """
     
     # Clear the MQTT config by publishing empty payload
-    if "discovery_topic" in entry.data:
-        # Use the stored discovery topic
-        config_topic = entry.data["discovery_topic"]
-    else:
-        # Construct the config topic for manually added devices
-        # Try to find any matching config topic by publishing to a general pattern
-        config_topic = f"homeassistant/media_player/{entry_device_id(entry)}/config"
+    config_topic = entry.data["discovery_topic"]
     
     if await async_wait_for_mqtt_client(hass):
         try:
