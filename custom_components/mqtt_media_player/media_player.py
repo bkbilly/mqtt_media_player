@@ -17,9 +17,8 @@ from homeassistant.components.mqtt import (
 )
 from homeassistant.core import Event, callback
 from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers import entity_registry as er
-from . import entry_device_id
 from .const import DOMAIN
+from .helpers import entry_device_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -30,24 +29,9 @@ async def async_setup_entry(hass, config_entry, async_add_entities):
         _LOGGER.error("MQTT integration is not available, make sure MQTT is set up correctly")
         return False
 
-    # Use the discovery topic if available, otherwise construct a wildcard pattern
-    if "discovery_topic" in config_entry.data:
-        CONFIG_TOPIC = config_entry.data["discovery_topic"]
-    else:
-        # For manually added devices, use a wildcard to catch any path structure
-        # This will match both homeassistant/media_player/my_player/config
-        # and homeassistant/media_player/lnxlink/my_player/config
-        CONFIG_TOPIC = f"homeassistant/media_player/#"
-
-    # The entity's unique ID used to be the entry title, so renaming the entry in
-    # the UI created a new entity and orphaned the old one. Move an entity still
-    # keyed on the title to the device ID so it keeps its entity ID and history.
-    device_id = entry_device_id(config_entry)
-    if config_entry.title != device_id:
-        registry = er.async_get(hass)
-        old_entity_id = registry.async_get_entity_id("media_player", DOMAIN, config_entry.title)
-        if old_entity_id and not registry.async_get_entity_id("media_player", DOMAIN, device_id):
-            registry.async_update_entity(old_entity_id, new_unique_id=device_id)
+    # Every entry has its discovery topic (added by migrate_to_1_2 to entries
+    # made by hand before discovery).
+    CONFIG_TOPIC = config_entry.data["discovery_topic"]
 
     # The config topic subscription is made in async_added_to_hass
     player = MQTTMediaPlayer(hass, config_entry, CONFIG_TOPIC)
@@ -162,17 +146,6 @@ class MQTTMediaPlayer(MediaPlayerEntity):
 
     async def handle_config(self, message):
         """Handle incoming configuration from MQTT."""
-        # Extract device ID from the topic to match against our config entry
-        # Topic format: homeassistant/media_player/[optional_prefix/]device_id/config
-        topic_parts = message.topic.split('/')
-        topic_device_id = topic_parts[-2]  # Get the part before '/config'
-
-        # Only process if this message is for our device. Checked before the
-        # empty payload: a manually added player subscribes with a wildcard.
-        if topic_device_id != self._device_id:
-            _LOGGER.debug(f"Ignoring config for different device: {topic_device_id}")
-            return
-
         # An empty config means the device was removed, as for MQTT discovery in
         # Home Assistant itself: remove the entry, its entity and its device.
         if not message.payload or message.payload.strip() == "":

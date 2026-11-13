@@ -4,11 +4,13 @@ from homeassistant import config_entries
 from homeassistant.helpers.service_info.mqtt import MqttServiceInfo
 
 from .const import DOMAIN
+from .helpers import topic_device_id
 
 
 @config_entries.HANDLERS.register(DOMAIN)
 class MqttMediaPlayerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
+    MINOR_VERSION = 2
 
     async def async_step_mqtt(self, discovery_info=None):
         """Handle MQTT discovery.
@@ -42,7 +44,7 @@ class MqttMediaPlayerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             # Same shape as the flows started from async_setup.
             discovery_info = {
-                "name": topic.split("/")[-2],  # the part right before /config
+                "name": topic_device_id(topic),
                 "discovery_topic": topic,
                 "discovery_data": config_data,
             }

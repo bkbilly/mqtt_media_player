@@ -20,7 +20,10 @@ Easiest install is via [HACS](https://hacs.xyz/):
 
 ### MQTT Discovery Message
 
-Publish a JSON configuration message to `homeassistant/media_player/{device_id}/config`:
+Publish a JSON configuration message to `homeassistant/media_player/{object_id}/config`, or
+`homeassistant/media_player/{node_id}/{object_id}/config` as in Home Assistant's
+[MQTT discovery](https://www.home-assistant.io/integrations/mqtt/#discovery-topic). The node ID is part of the
+device ID, so several publishers can use the same object ID under their own node ID (e.g. one per computer).
 
 ```json
 {
